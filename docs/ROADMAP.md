@@ -6,7 +6,7 @@
 
 ## Phase 1: Admin MVP
 - [ ] Next.js app scaffold, Supabase Auth, org onboarding
-- [ ] Domain verification (DNS TXT) before any sending is enabled
+- [ ] Domain verification (DNS TXT) before any sending is enabled (DB guards tested; edge function written, untested)
 - [ ] Target import (CSV) and groups
 - [x] Template library (5 to 8 generic scenarios)
 
