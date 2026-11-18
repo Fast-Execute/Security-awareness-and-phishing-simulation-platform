@@ -11,16 +11,16 @@ one (or report it) get short, targeted **awareness training** straight away.
 ## Project progress
 
 <!-- progress:start -->
-**Overall: 11%** (2/19 tasks)
+**Overall: 16%** (3/19 tasks)
 
 ```
-[██░░░░░░░░░░░░░░░░░░] 11%
+[███░░░░░░░░░░░░░░░░░] 16%
 ```
 
 | Stage | Progress | Status |
 |-------|----------|--------|
 | Phase 0: Foundation | `████████████████████` 100% (2/2) | ✅ Complete |
-| **▶ Phase 1: Admin MVP** | `░░░░░░░░░░░░░░░░░░░░` 0% (0/4) | 🚧 **In progress (current stage)** |
+| **▶ Phase 1: Admin MVP** | `█████░░░░░░░░░░░░░░░` 25% (1/4) | 🚧 **In progress (current stage)** |
 | Phase 2: Campaigns | `░░░░░░░░░░░░░░░░░░░░` 0% (0/4) | ⏳ Not started |
 | Phase 3: Training | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |
 | Phase 4: Insights | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |

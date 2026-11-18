@@ -8,7 +8,7 @@
 - [ ] Next.js app scaffold, Supabase Auth, org onboarding
 - [ ] Domain verification (DNS TXT) before any sending is enabled
 - [ ] Target import (CSV) and groups
-- [ ] Template library (5 to 8 generic scenarios)
+- [x] Template library (5 to 8 generic scenarios)
 
 ## Phase 2: Campaigns
 - [ ] Campaign builder and scheduler
