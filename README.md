@@ -79,3 +79,4 @@ npm run test:db   # SQL guards + RLS against a throwaway local Postgres (needs P
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Safety & acceptable use](docs/SAFETY.md)
+- [Campaign sender operations](docs/CAMPAIGN_SENDER_OPERATIONS.md)
