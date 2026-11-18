@@ -86,3 +86,15 @@ export function safeEqual(a: string, b: string): boolean {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
+
+/**
+ * Simulations may teach people to inspect links, but must never submit or collect credentials.
+ * Only the two non-sensitive rendering variables used by the built-in scenarios are permitted.
+ */
+export function isSafeSimulationTemplate(subject: string, html: string): boolean {
+  if (/<\\s*(form|input|button)\\b/i.test(html)) return false;
+  if (/type\\s*=\\s*["']?password/i.test(html)) return false;
+  const allowed = new Set(["first_name", "tracking_url"]);
+  const placeholders = [...subject.matchAll(/{{\\s*([a-z_]+)\\s*}}/g), ...html.matchAll(/{{\\s*([a-z_]+)\\s*}}/g)];
+  return placeholders.every(match => allowed.has(match[1]));
+}
