@@ -5,6 +5,10 @@ import {
 } from "./tracking.ts";
 
 const TOKEN = "a".repeat(48);
+function stored(method: string, event: string | null) {
+  const result = parseTrackingRequest(method, TOKEN, event);
+  return result.ok ? result.storedEvent : null;
+}
 
 test("tracking accepts only 48-character lowercase hex recipient tokens", () => {
   assert.deepEqual(parseTrackingRequest("GET", TOKEN, "click"), {
@@ -15,15 +19,13 @@ test("tracking accepts only 48-character lowercase hex recipient tokens", () => 
 });
 
 test("tracking defaults an omitted event to click", () => {
-  const parsed = parseTrackingRequest("GET", TOKEN, null);
-  assert.equal(parsed.ok, true);
-  if (parsed.ok) assert.equal(parsed.storedEvent, "clicked");
+  assert.equal(stored("GET", null), "clicked");
 });
 
 test("tracking maps only open, click and report to stored event names", () => {
-  assert.equal(parseTrackingRequest("GET", TOKEN, "open").ok && parseTrackingRequest("GET", TOKEN, "open").storedEvent, "opened");
-  assert.equal(parseTrackingRequest("GET", TOKEN, "click").ok && parseTrackingRequest("GET", TOKEN, "click").storedEvent, "clicked");
-  assert.equal(parseTrackingRequest("POST", TOKEN, "report").ok && parseTrackingRequest("POST", TOKEN, "report").storedEvent, "reported");
+  assert.equal(stored("GET", "open"), "opened");
+  assert.equal(stored("GET", "click"), "clicked");
+  assert.equal(stored("POST", "report"), "reported");
   assert.equal(parseTrackingRequest("GET", TOKEN, "submitted").ok, false);
 });
 
@@ -35,8 +37,9 @@ test("report is POST-only and open/click are GET-only", () => {
 });
 
 test("unknown event is rejected", () => {
-  const parsed = parseTrackingRequest("GET", TOKEN, "credential");
-  assert.deepEqual(parsed, { ok: false, status: 400, message: "Unsupported tracking event." });
+  assert.deepEqual(parseTrackingRequest("GET", TOKEN, "credential"), {
+    ok: false, status: 400, message: "Unsupported tracking event.",
+  });
 });
 
 test("user-agent is bounded and absent values remain null", () => {
