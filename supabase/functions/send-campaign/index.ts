@@ -26,7 +26,7 @@ function senderDomain(value: string): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
-class ProviderError extends Error { constructor(public status: number) { super(`email provider returned ${status}`); } }
+class ProviderError extends Error { constructor(public status: number, public detail: string) { super(`email provider returned ${status}: ${detail}`); } }
 
 async function sendEmail(to: string, subject: string, html: string, idempotencyKey: string) {
   const response = await fetch("https://api.resend.com/emails", {
@@ -39,7 +39,8 @@ async function sendEmail(to: string, subject: string, html: string, idempotencyK
     body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject, html }),
   });
   if (!response.ok) {
-    throw new ProviderError(response.status);
+    const detail = await response.text().catch(() => "");
+    throw new ProviderError(response.status, detail.slice(0, 500));
   }
 }
 
@@ -167,7 +168,8 @@ Deno.serve(async req => {
         } catch (error) {
           // Retry network errors, rate limits and provider 5xx responses using the same provider key.
           // Permanent provider 4xx responses are terminal for this recipient.
-          const retryable = !(error instanceof ProviderError) || error.status === 429 || error.status >= 500 || error.status === 409;
+          const retryable = !(error instanceof ProviderError) || error.status === 408 || error.status === 429 || error.status >= 500 ||
+            (error.status === 409 && /concurrent/i.test(error.detail));
           const { data: latest } = await db.from("campaign_recipients")
             .select("status").eq("id", recipient.id).maybeSingle();
           if (latest?.status !== "sent" && !retryable) {
