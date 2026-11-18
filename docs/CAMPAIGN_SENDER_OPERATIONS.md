@@ -1,6 +1,6 @@
-# Campaign sender operations
+# Campaign sender and tracking operations
 
-The `send-campaign` Edge Function is an authorised simulation sender. It is deliberately restricted to organisation-owned groups and templates, verified sending domains, and organisations that accepted the acceptable-use terms.
+The campaign sender is an authorised awareness-simulation workflow. It is restricted to organisation-owned groups and templates, verified sending domains, and organisations that accepted the acceptable-use terms.
 
 ## Required Edge Function secrets
 
@@ -15,7 +15,7 @@ Configure these under Supabase Dashboard → Edge Functions → Secrets. Do not 
 
 ## Scheduler invocation
 
-Invoke the function using POST from a trusted scheduler. Never call it from a public browser.
+Invoke the sender using POST from a trusted scheduler. Never call it from a public browser.
 
 ```http
 POST https://<project-ref>.supabase.co/functions/v1/send-campaign
@@ -23,6 +23,20 @@ x-campaign-secret: <CAMPAIGN_CRON_SECRET>
 ```
 
 The function rejects other HTTP methods and requests without the shared secret. Configure the scheduler only after the organisation has approved the simulation and the sender domain is verified.
+
+## Tracking events
+
+The `track` Edge Function accepts only a recipient's 48-character lowercase hexadecimal tracking token and the supported event/method combinations:
+
+- `GET ?t=<token>&event=open`: records an `opened` event and returns a 1×1 transparent GIF. The sender adds this pixel to the delivered HTML message.
+- `GET ?t=<token>` or `GET ?t=<token>&event=click`: records a `clicked` event and displays the teachable-moment page with scenario-specific red flags.
+- `POST ?t=<token>&event=report`: records a `reported` self-assessment when the learner chooses “I would report a message like this” on that page.
+
+The report button is intentionally described as a self-assessment. It does **not** forward the original message, contact the organisation's IT team, or represent an Outlook/Gmail report-phishing integration. Those integrations remain future work.
+
+Open tracking is approximate. Image blocking, privacy proxies, caching and automated security scanners can suppress or trigger a pixel independently of a person reading the message. Treat opens as a directional aggregate signal, not proof of reading. Repeated events may be stored, while the results dashboard counts unique recipients per event type.
+
+The endpoint does not store IP addresses or request bodies. It stores only the event type, recipient/organisation relationship, timestamp and a user-agent value truncated to 500 characters. No credentials, password fields or submitted message contents are collected.
 
 ## Safety and retry behaviour
 
@@ -40,11 +54,14 @@ The function rejects other HTTP methods and requests without the shared secret. 
 2. Test Resend with a verified domain and test inboxes owned by the organisation.
 3. Confirm campaign, group, target and template rows are present and belong to the same organisation.
 4. Confirm the organisation's acceptable-use agreement is accepted.
-5. Verify that no request or template can submit credentials.
+5. Confirm no request or template can submit credentials.
 6. Confirm a second concurrent invocation skips a campaign already claimed by the first.
 7. Confirm batches progress past the first page and retries reuse the same provider idempotency key.
-8. Deploy only after these checks pass.
+8. Verify open, click and self-report events using test recipients; verify the report response clearly says it is not sent to IT.
+9. Deploy only after these checks pass.
 
-## Known operational limitation
+## Known operational limitations
 
 A worker process terminated unexpectedly after claiming a campaign can leave its status at `sending`. The current schema does not include a claim timestamp or lease. Add a database-backed claim lease/recovery routine before relying on unattended production scheduling.
+
+The tracking and sending Edge Functions have not yet been type-checked or integration-tested against a connected Supabase project in this repository workflow. Do not treat the functions as production-deployed.
