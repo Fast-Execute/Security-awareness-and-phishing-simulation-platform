@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types --test lib/csv/parseTargets.test.ts supabase/functions/_shared/render.test.ts supabase/functions/_shared/tracking.test.ts",
+    "test": "node --experimental-strip-types --test lib/csv/parseTargets.test.ts supabase/functions/_shared/render.test.ts supabase/functions/_shared/tracking.test.ts supabase/functions/_shared/pagination.test.ts",
     "test:db": "bash scripts/test-db.sh",
     "test:csv": "node --experimental-strip-types --test lib/csv/parseTargets.test.ts"
   },
