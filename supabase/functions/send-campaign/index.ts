@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { firstName, isSafeSimulationTemplate, renderTemplate } from "../_shared/render.ts";
+import { trackingPixelHtml } from "../_shared/tracking.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -154,7 +155,7 @@ Deno.serve(async req => {
           html = renderTemplate(template.body_html, { first_name: firstName(target.full_name), tracking_url: trackingUrl }, "html");
           subject = renderTemplate(template.subject, { first_name: firstName(target.full_name), tracking_url: trackingUrl }, "text");
           // Open tracking is approximate: mail privacy proxies and image blocking can distort counts.
-          const pixel = `<img src="${openUrl}" width="1" height="1" alt="" aria-hidden="true" style="display:block;width:1px;height:1px;border:0" />`;
+          const pixel = trackingPixelHtml(openUrl);
           html = /<\/body\s*>/i.test(html) ? html.replace(/<\/body\s*>/i, `${pixel}</body>`) : `${html}${pixel}`;
         } catch {
           await db.from("campaign_recipients").update({ status: "failed" }).eq("id", recipient.id);
