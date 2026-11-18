@@ -8,6 +8,27 @@ one (or report it) get short, targeted **awareness training** straight away.
 > verified ownership of its sending domain and accepted the acceptable-use terms. See
 > [docs/SAFETY.md](docs/SAFETY.md).
 
+## Project progress
+
+<!-- progress:start -->
+**Overall: 11%** (2/19 tasks)
+
+```
+[██░░░░░░░░░░░░░░░░░░] 11%
+```
+
+| Stage | Progress | Status |
+|-------|----------|--------|
+| Phase 0: Foundation | `████████████████████` 100% (2/2) | ✅ Complete |
+| **▶ Phase 1: Admin MVP** | `░░░░░░░░░░░░░░░░░░░░` 0% (0/4) | 🚧 **In progress (current stage)** |
+| Phase 2: Campaigns | `░░░░░░░░░░░░░░░░░░░░` 0% (0/4) | ⏳ Not started |
+| Phase 3: Training | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |
+| Phase 4: Insights | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |
+| Phase 5: Integrations | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |
+<!-- progress:end -->
+
+_Generated from [docs/ROADMAP.md](docs/ROADMAP.md). Tick a box there, then run `python3 scripts/progress.py`._
+
 ## Core features (planned)
 
 | Area | What it does |

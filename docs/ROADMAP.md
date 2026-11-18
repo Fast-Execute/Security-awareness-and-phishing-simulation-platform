@@ -1,6 +1,6 @@
 # Roadmap
 
-## Phase 0: Foundation (this commit)
+## Phase 0: Foundation
 - [x] README, architecture, safety policy
 - [x] Initial schema and RLS
 
