@@ -22,7 +22,7 @@ type Recipient = { id: string; target_id: string; status: "pending" | "sent" | "
 
 function senderDomain(value: string): string | null {
   const address = value.match(/<([^<>]+)>/)?.[1] ?? value.trim();
-  const match = address.match(/^[^@\\s<>]+@([^@\\s<>]+)$/);
+  const match = address.match(/^[^@\s<>]+@([^@\s<>]+)$/);
   return match?.[1]?.toLowerCase() ?? null;
 }
 
