@@ -26,7 +26,11 @@ function senderDomain(value: string): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
-class ProviderError extends Error { constructor(public status: number, public detail: string) { super(`email provider returned ${status}: ${detail}`); } }
+class ProviderError extends Error {
+  constructor(public status: number, public detail: string) {
+    super(`email provider returned ${status}: ${detail}`);
+  }
+}
 
 async function sendEmail(to: string, subject: string, html: string, idempotencyKey: string) {
   const response = await fetch("https://api.resend.com/emails", {
@@ -67,7 +71,6 @@ Deno.serve(async req => {
   const results: Record<string, unknown>[] = [];
 
   for (const campaign of (campaigns ?? []) as Campaign[]) {
-    // Validate all tenant and sender controls before claiming a campaign.
     const [{ data: org }, { data: domain }, { data: template }, { data: group }] = await Promise.all([
       db.from("organizations").select("aup_accepted_at").eq("id", campaign.org_id).maybeSingle(),
       db.from("domains").select("domain,verified_at").eq("id", campaign.domain_id).eq("org_id", campaign.org_id).maybeSingle(),
@@ -84,7 +87,6 @@ Deno.serve(async req => {
       continue;
     }
 
-    // Compare-and-set claim: only the invocation that changes scheduled -> sending owns this campaign.
     const { data: claimed, error: claimError } = await db.from("campaigns")
       .update({ status: "sending" })
       .eq("id", campaign.id)
@@ -145,11 +147,15 @@ Deno.serve(async req => {
         if (recipient.status !== "pending") continue;
 
         const trackingUrl = `${SUPABASE_URL}/functions/v1/track?t=${encodeURIComponent(recipient.tracking_token)}`;
+        const openUrl = `${trackingUrl}&event=open`;
         let html: string;
         let subject: string;
         try {
           html = renderTemplate(template.body_html, { first_name: firstName(target.full_name), tracking_url: trackingUrl }, "html");
           subject = renderTemplate(template.subject, { first_name: firstName(target.full_name), tracking_url: trackingUrl }, "text");
+          // Open tracking is approximate: mail privacy proxies and image blocking can distort counts.
+          const pixel = `<img src="${openUrl}" width="1" height="1" alt="" aria-hidden="true" style="display:block;width:1px;height:1px;border:0" />`;
+          html = /<\/body\s*>/i.test(html) ? html.replace(/<\/body\s*>/i, `${pixel}</body>`) : `${html}${pixel}`;
         } catch {
           await db.from("campaign_recipients").update({ status: "failed" }).eq("id", recipient.id);
           failed++;
@@ -157,7 +163,6 @@ Deno.serve(async req => {
         }
 
         try {
-          // Stable provider key prevents duplicate sends if the worker retries after a network timeout.
           await sendEmail(target.email, subject, html, `campaign-recipient/${recipient.id}`);
           const { error: updateError } = await db.from("campaign_recipients")
             .update({ status: "sent", sent_at: new Date().toISOString() })
@@ -166,8 +171,6 @@ Deno.serve(async req => {
           if (updateError) throw new Error("sent status could not be recorded");
           sent++;
         } catch (error) {
-          // Retry network errors, rate limits and provider 5xx responses using the same provider key.
-          // Permanent provider 4xx responses are terminal for this recipient.
           const retryable = !(error instanceof ProviderError) || error.status === 408 || error.status === 429 || error.status >= 500 ||
             (error.status === 409 && /concurrent/i.test(error.detail));
           const { data: latest } = await db.from("campaign_recipients")
@@ -188,7 +191,6 @@ Deno.serve(async req => {
       if (countError) throw new Error("unable to determine remaining work");
       remaining = unfinished ?? 0;
 
-      // Count targets not yet represented by a recipient row, so later batches are not skipped.
       const processedTargetIds = new Set((recipientRows ?? []).map(row => row.target_id));
       const unrepresented = targetIds.filter(id => targetById.has(id) && !processedTargetIds.has(id));
       remaining += unrepresented.length;
@@ -200,7 +202,6 @@ Deno.serve(async req => {
 
       results.push({ campaign_id: campaign.id, status: "processed", sent, failed, remaining });
     } catch {
-      // Release the claim for a later retry. Recipient rows already marked sent remain idempotently skipped.
       await db.from("campaigns").update({ status: "scheduled" }).eq("id", campaign.id).eq("status", "sending");
       results.push({ campaign_id: campaign.id, status: "retry_queued", sent, failed });
     }
