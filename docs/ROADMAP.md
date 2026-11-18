@@ -5,7 +5,7 @@
 - [x] Initial schema and RLS
 
 ## Phase 1: Admin MVP
-- [ ] Next.js app scaffold, Supabase Auth, org onboarding
+- [x] Next.js app scaffold, Supabase Auth, org onboarding
 - [ ] Domain verification (DNS TXT) before any sending is enabled (DB guards tested; edge function written, untested)
 - [x] Target import (CSV parser + `import_targets()` SQL, verified-domain only)
 - [ ] Target import and groups UI
