@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { firstName, renderTemplate } from "../_shared/render.ts";
+import { firstName, isSafeSimulationTemplate, renderTemplate } from "../_shared/render.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -26,14 +26,7 @@ function senderDomain(value: string): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
-function safeTemplate(subject: string, html: string): boolean {
-  // Simulations may teach link recognition, but must never collect credentials or form submissions.
-  if (/<\\s*(form|input|button)\\b/i.test(html)) return false;
-  if (/type\\s*=\\s*["']?password/i.test(html)) return false;
-  const allowed = new Set(["first_name", "tracking_url"]);
-  const placeholders = [...subject, ...html].join("").match(/{{\\s*[a-z_]+\\s*}}/g) ?? [];
-  return placeholders.every(p => allowed.has(p.replace(/[{}\\s]/g, "")));
-}
+class ProviderError extends Error { constructor(public status: number) { super(`email provider returned ${status}`); } }
 
 async function sendEmail(to: string, subject: string, html: string, idempotencyKey: string) {
   const response = await fetch("https://api.resend.com/emails", {
@@ -46,8 +39,7 @@ async function sendEmail(to: string, subject: string, html: string, idempotencyK
     body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject, html }),
   });
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`email provider returned ${response.status}: ${detail.slice(0, 300)}`);
+    throw new ProviderError(response.status);
   }
 }
 
@@ -86,7 +78,7 @@ Deno.serve(async req => {
     ]);
 
     if (!org?.aup_accepted_at || !domain?.verified_at || domain.domain !== fromDomain || !template || !group ||
-        !safeTemplate(template.subject, template.body_html)) {
+        !isSafeSimulationTemplate(template.subject, template.body_html)) {
       results.push({ campaign_id: campaign.id, status: "blocked", reason: "safety gate failed" });
       continue;
     }
@@ -172,12 +164,13 @@ Deno.serve(async req => {
             .eq("status", "pending");
           if (updateError) throw new Error("sent status could not be recorded");
           sent++;
-        } catch {
-          // Keep the row pending after ambiguous network/database errors. The provider idempotency key
-          // makes a retry safe within Resend's 24-hour idempotency window.
+        } catch (error) {
+          // Retry network errors, rate limits and provider 5xx responses using the same provider key.
+          // Permanent provider 4xx responses are terminal for this recipient.
+          const retryable = !(error instanceof ProviderError) || error.status === 429 || error.status >= 500 || error.status === 409;
           const { data: latest } = await db.from("campaign_recipients")
             .select("status").eq("id", recipient.id).maybeSingle();
-          if (latest?.status !== "sent") {
+          if (latest?.status !== "sent" && !retryable) {
             await db.from("campaign_recipients").update({ status: "failed" }).eq("id", recipient.id).eq("status", "pending");
             failed++;
           }
