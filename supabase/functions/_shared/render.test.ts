@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildFrom, escapeHtml, firstName, htmlToText, isValidToken, renderTemplate, safeEqual, trackingUrl,
+  buildFrom, escapeHtml, firstName, htmlToText, isSafeSimulationTemplate, isValidToken, renderTemplate, safeEqual, trackingUrl,
 } from "./render.ts";
 
 const TOKEN = "a".repeat(48);
@@ -66,4 +66,11 @@ test("safeEqual", () => {
 
 test("escapeHtml covers quotes", () => {
   assert.equal(escapeHtml(`"'&<>`), "&quot;&#39;&amp;&lt;&gt;");
+});
+
+test("safe simulation templates allow only learning links and approved placeholders", () => {
+  assert.equal(isSafeSimulationTemplate("Hello {{first_name}}", '<p>Review <a href="{{tracking_url}}">this link</a></p>'), true);
+  assert.equal(isSafeSimulationTemplate("Hello {{email}}", "<p>Review this</p>"), false);
+  assert.equal(isSafeSimulationTemplate("Hello", '<form action="/collect"><input type="password"></form>'), false);
+  assert.equal(isSafeSimulationTemplate("Hello", '<input type="text" name="username">'), false);
 });
