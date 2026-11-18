@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { boundedUserAgent, parseTrackingRequest, reportAction, trackingPixelHtml } from "../_shared/tracking.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -10,7 +11,7 @@ function escapeHtml(value: string): string {
   })[char]!);
 }
 
-function page(scenario: string, flags: string[], reportUrl: string) {
+function page(scenario: string, flags: string[], action: string) {
   const list = flags.map(flag => `<li>${escapeHtml(flag)}</li>`).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Simulation complete</title>
   <style>body{font-family:system-ui,sans-serif;max-width:760px;margin:48px auto;padding:0 20px;line-height:1.6}article{border:1px solid #ddd;border-radius:12px;padding:28px}h1{margin-top:0}.ok{padding:14px;border:1px solid #ddd;border-radius:8px}li{margin:10px 0}button{padding:12px 18px;border:0;border-radius:8px;background:#173f35;color:white;font:inherit;cursor:pointer}</style></head>
@@ -21,7 +22,7 @@ function page(scenario: string, flags: string[], reportUrl: string) {
   <h2>What to do next time</h2><p>Pause. Check the sender address and destination before clicking. Be cautious with urgency, unexpected requests and rewards. If you are unsure, report the message using your organisation's normal reporting process.</p>
   <p><strong>No password was requested or stored by this simulation.</strong></p>
   <hr><h2>Would you have reported this message?</h2><p>This optional learning check records your self-reported intention only. It does not send a message to your IT team or mailbox.</p>
-  <form method="post" action="${escapeHtml(reportUrl)}"><button type="submit">I would report a message like this</button></form></article></body></html>`;
+  <form method="post" action="${action}"><button type="submit">I would report a message like this</button></form></article></body></html>`;
 }
 
 const transparentGif = new Uint8Array([
@@ -31,30 +32,25 @@ const transparentGif = new Uint8Array([
 
 Deno.serve(async req => {
   if (!db) return new Response("Tracking is not configured.", { status: 503 });
-  if (req.method !== "GET" && req.method !== "POST") {
-    return new Response("GET or POST required", { status: 405, headers: { Allow: "GET, POST" } });
-  }
 
   const url = new URL(req.url);
-  const token = url.searchParams.get("t");
-  const event = url.searchParams.get("event") ?? "click";
-  if (!token || !/^[a-f0-9]{48}$/.test(token)) return new Response("Invalid simulation link.", { status: 400 });
-  if (!["open", "click", "report"].includes(event)) return new Response("Unsupported tracking event.", { status: 400 });
-  if ((event === "report" && req.method !== "POST") || (event !== "report" && req.method !== "GET")) {
-    return new Response("Method not allowed for this event.", { status: 405 });
+  const parsed = parseTrackingRequest(req.method, url.searchParams.get("t"), url.searchParams.get("event"));
+  if (!parsed.ok) {
+    const headers = parsed.status === 405 ? { Allow: "GET, POST" } : undefined;
+    return new Response(parsed.message, { status: parsed.status, headers });
   }
 
   const { data: recipient, error: recipientError } = await db.from("campaign_recipients")
-    .select("id,org_id,campaign_id").eq("tracking_token", token).maybeSingle();
+    .select("id,org_id,campaign_id").eq("tracking_token", parsed.token).maybeSingle();
   if (recipientError) return new Response("Tracking temporarily unavailable.", { status: 503 });
   if (!recipient) return new Response("Simulation link not found or expired.", { status: 404 });
 
   // Do not retain IP addresses or request bodies. Only a bounded user-agent is recorded.
-  const userAgent = req.headers.get("user-agent")?.slice(0, 500) || null;
+  const userAgent = boundedUserAgent(req.headers.get("user-agent"));
 
-  if (event === "open") {
+  if (parsed.event === "open") {
     const { error } = await db.from("campaign_events").insert({
-      recipient_id: recipient.id, org_id: recipient.org_id, type: "opened", user_agent: userAgent,
+      recipient_id: recipient.id, org_id: recipient.org_id, type: parsed.storedEvent, user_agent: userAgent,
     });
     if (error) return new Response("Tracking temporarily unavailable.", { status: 503 });
     return new Response(transparentGif, {
@@ -67,9 +63,9 @@ Deno.serve(async req => {
     });
   }
 
-  if (event === "report") {
+  if (parsed.event === "report") {
     const { error } = await db.from("campaign_events").insert({
-      recipient_id: recipient.id, org_id: recipient.org_id, type: "reported", user_agent: userAgent,
+      recipient_id: recipient.id, org_id: recipient.org_id, type: parsed.storedEvent, user_agent: userAgent,
     });
     if (error) return new Response("Your learning response could not be recorded. Please try again.", { status: 503 });
     return new Response(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Response recorded</title></head><body style="font-family:system-ui,sans-serif;max-width:680px;margin:48px auto;padding:0 20px;line-height:1.6"><h1>Thanks — your learning response was recorded.</h1><p>This was a self-assessment only. No report was sent to your organisation's IT team.</p><p>No credentials or message contents were collected.</p></body></html>`, {
@@ -78,7 +74,7 @@ Deno.serve(async req => {
   }
 
   const { error: clickError } = await db.from("campaign_events").insert({
-    recipient_id: recipient.id, org_id: recipient.org_id, type: "clicked", user_agent: userAgent,
+    recipient_id: recipient.id, org_id: recipient.org_id, type: parsed.storedEvent, user_agent: userAgent,
   });
   if (clickError) return new Response("Tracking temporarily unavailable.", { status: 503 });
 
@@ -89,9 +85,7 @@ Deno.serve(async req => {
     .eq("id", campaign.template_id).maybeSingle();
   if (!template) return new Response("Simulation unavailable.", { status: 404 });
 
-  const reportUrl = new URL(req.url);
-  reportUrl.searchParams.set("event", "report");
-  return new Response(page(template.name, template.red_flags || [], reportUrl.toString()), {
+  return new Response(page(template.name, template.red_flags || [], reportAction(parsed.token)), {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
