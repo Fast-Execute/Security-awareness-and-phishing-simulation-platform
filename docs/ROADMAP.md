@@ -15,7 +15,7 @@
 - [x] Campaign builder UI
 - [ ] `send-campaign` edge function: hardened with compare-and-set campaign claims, bounded batches, pacing, Resend idempotency keys, tenant/domain/AUP gates and credential-form rejection; still requires Deno/provider integration tests and deployment
 - [ ] `track` edge function and teachable-moment page: open pixel, click event, and explicit self-report event are implemented; shared request rules/helpers have Node unit tests and GitHub Actions CI; still requires Deno type-check/integration tests and deployment
-- [ ] Sender reliability: add pagination for large audiences and a database-backed claim lease/recovery routine before unattended scheduling
+- [ ] Sender reliability: large-audience pagination is implemented and unit-tested; add a database-backed claim lease/recovery routine before unattended scheduling
 - [x] Organisation-scoped campaign results dashboard (aggregate opens, clicks and self-reported learning responses; per-campaign rows)
 
 ## Phase 3: Training
