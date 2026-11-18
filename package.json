@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "node --test lib/csv/parseTargets.test.ts",
+    "test:db": "bash scripts/test-db.sh",
+    "test:csv": "node --experimental-strip-types --test lib/csv/parseTargets.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.0",

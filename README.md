@@ -11,16 +11,16 @@ one (or report it) get short, targeted **awareness training** straight away.
 ## Project progress
 
 <!-- progress:start -->
-**Overall: 16%** (3/19 tasks)
+**Overall: 20%** (4/20 tasks)
 
 ```
-[███░░░░░░░░░░░░░░░░░] 16%
+[████░░░░░░░░░░░░░░░░] 20%
 ```
 
 | Stage | Progress | Status |
 |-------|----------|--------|
 | Phase 0: Foundation | `████████████████████` 100% (2/2) | ✅ Complete |
-| **▶ Phase 1: Admin MVP** | `█████░░░░░░░░░░░░░░░` 25% (1/4) | 🚧 **In progress (current stage)** |
+| **▶ Phase 1: Admin MVP** | `████████░░░░░░░░░░░░` 40% (2/5) | 🚧 **In progress (current stage)** |
 | Phase 2: Campaigns | `░░░░░░░░░░░░░░░░░░░░` 0% (0/4) | ⏳ Not started |
 | Phase 3: Training | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |
 | Phase 4: Insights | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |
@@ -65,6 +65,13 @@ git clone https://github.com/Fast-Execute/Security-awareness-and-phishing-simula
 cd Security-awareness-and-phishing-simulation-platform
 cp .env.example .env.local
 # create a Supabase project, then apply supabase/migrations/0001_init.sql
+```
+
+## Tests
+
+```bash
+npm test          # CSV parser (Node 22.18+, no extra packages)
+npm run test:db   # SQL guards + RLS against a throwaway local Postgres (needs PostgreSQL server binaries)
 ```
 
 ## Docs
