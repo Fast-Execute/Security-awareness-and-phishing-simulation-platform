@@ -8,7 +8,7 @@
 - [x] Next.js app scaffold, Supabase Auth, org onboarding
 - [ ] Domain verification (DNS TXT) before any sending is enabled (DB guards tested; edge function written, untested)
 - [x] Target import (CSV parser + `import_targets()` SQL, verified-domain only)
-- [ ] Target import and groups UI (CSV import and group creation are present; group assignment still needs UI)
+- [x] Target import and groups UI (CSV import, group creation and editable group membership)
 - [x] Template library (5 to 8 generic scenarios)
 
 ## Phase 2: Campaigns
