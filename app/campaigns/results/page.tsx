@@ -55,14 +55,24 @@ export default async function CampaignResultsPage() {
   let events: Event[] = [];
 
   if (ids.length) {
-    const [{ data: recipientRows, error: recipientError }, { data: eventRows, error: eventError }] = await Promise.all([
-      supabase.from("campaign_recipients").select("id,campaign_id,status").eq("org_id", org.id).in("campaign_id", ids),
-      supabase.from("campaign_events").select("recipient_id,type").eq("org_id", org.id).in("recipient_id",
-        (await supabase.from("campaign_recipients").select("id").eq("org_id", org.id).in("campaign_id", ids)).data?.map(r => r.id) || [])
-    ]);
-    if (recipientError || eventError) throw new Error("Unable to load campaign activity.");
+    const { data: recipientRows, error: recipientError } = await supabase
+      .from("campaign_recipients")
+      .select("id,campaign_id,status")
+      .eq("org_id", org.id)
+      .in("campaign_id", ids);
+    if (recipientError) throw new Error("Unable to load campaign recipients.");
     recipients = (recipientRows || []) as Recipient[];
-    events = (eventRows || []) as Event[];
+
+    const recipientIds = recipients.map(r => r.id);
+    if (recipientIds.length) {
+      const { data: eventRows, error: eventError } = await supabase
+        .from("campaign_events")
+        .select("recipient_id,type")
+        .eq("org_id", org.id)
+        .in("recipient_id", recipientIds);
+      if (eventError) throw new Error("Unable to load campaign activity.");
+      events = (eventRows || []) as Event[];
+    }
   }
 
   const byCampaign = new Map<string, Recipient[]>();
@@ -73,7 +83,7 @@ export default async function CampaignResultsPage() {
   }
 
   const eventsByRecipient = new Map<string, Set<string>>();
-  const totals = { audience: recipients.length, sent: 0, failed: 0, clicked: 0, reported: 0, opened: 0, delivered: 0 };
+  const totals = { audience: recipients.length, sent: 0, failed: 0, clicked: 0, reported: 0, opened: 0 };
   for (const recipient of recipients) {
     if (recipient.status === "sent") totals.sent++;
     if (recipient.status === "failed") totals.failed++;
@@ -87,16 +97,15 @@ export default async function CampaignResultsPage() {
     if (types.has("clicked")) totals.clicked++;
     if (types.has("reported")) totals.reported++;
     if (types.has("opened")) totals.opened++;
-    if (types.has("delivered")) totals.delivered++;
   }
 
   const cards = [
     ["Recipients", totals.audience],
     ["Sent", totals.sent],
     ["Failed", totals.failed],
-    ["Unique clickers", totals.clicked],
-    ["Reported", totals.reported],
     ["Unique opens", totals.opened],
+    ["Unique clickers", totals.clicked],
+    ["Self-reported", totals.reported],
   ] as const;
 
   return <main style={{ maxWidth: 1100, margin: "3rem auto", padding: "0 1rem" }}>
@@ -105,21 +114,22 @@ export default async function CampaignResultsPage() {
       <nav style={{ display: "flex", gap: 14 }}><Link href="/dashboard">Dashboard</Link><Link href="/campaigns">Campaign builder</Link><Link href="/people">People & groups</Link></nav>
     </header>
 
-    <p>Organisation-wide aggregate outcomes. Click and open figures count unique recipients, not repeated events. No passwords or submitted credentials are collected by this platform.</p>
+    <p>Organisation-wide aggregate outcomes. Opens, clicks and self-reported responses count unique recipients, not repeated events. No passwords or submitted credentials are collected.</p>
 
     <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 12, margin: "24px 0 32px" }}>
       {cards.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
+      <Metric label="Open rate" value={rate(totals.opened, totals.sent)} hint="Unique opens ÷ sent (approximate)" />
       <Metric label="Click rate" value={rate(totals.clicked, totals.sent)} hint="Unique clickers ÷ sent" />
-      <Metric label="Report rate" value={rate(totals.reported, totals.sent)} hint="Unique reporters ÷ sent" />
+      <Metric label="Self-report rate" value={rate(totals.reported, totals.sent)} hint="Unique self-reports ÷ sent" />
     </section>
 
     <h2>Campaign activity</h2>
     {!campaignRows.length ? <section style={{ border: "1px dashed #aaa", borderRadius: 10, padding: 24 }}>
       <p>No campaigns have been created yet.</p><Link href="/campaigns">Build your first awareness campaign →</Link>
     </section> : <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 940 }}>
         <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #ccc" }}>
-          {["Campaign","Status","Audience","Sent","Failed","Unique clicks","Click rate","Reports","Report rate"].map(label => <th key={label} style={{ padding: 10 }}>{label}</th>)}
+          {["Campaign","Status","Audience","Sent","Failed","Unique opens","Open rate","Unique clicks","Click rate","Self-reports","Self-report rate"].map(label => <th key={label} style={{ padding: 10 }}>{label}</th>)}
         </tr></thead>
         <tbody>{campaignRows.map(campaign => {
           const group = byCampaign.get(campaign.id) || [];
@@ -131,12 +141,14 @@ export default async function CampaignResultsPage() {
           }
           const sent = group.filter(r => r.status === "sent").length;
           const failed = group.filter(r => r.status === "failed").length;
+          const opened = [...seen.values()].filter(s => s.has("opened")).length;
           const clicked = [...seen.values()].filter(s => s.has("clicked")).length;
           const reported = [...seen.values()].filter(s => s.has("reported")).length;
           return <tr key={campaign.id} style={{ borderBottom: "1px solid #ddd" }}>
             <td style={{ padding: 10 }}><strong>{campaign.name}</strong><div style={{ color: "#777", fontSize: 12 }}>{campaign.scheduled_at ? new Date(campaign.scheduled_at).toLocaleString() : "Not scheduled"}</div></td>
             <td style={{ padding: 10 }}>{campaign.status}</td><td style={{ padding: 10 }}>{group.length}</td>
             <td style={{ padding: 10 }}>{sent}</td><td style={{ padding: 10 }}>{failed}</td>
+            <td style={{ padding: 10 }}>{opened}</td><td style={{ padding: 10 }}>{rate(opened, sent)}</td>
             <td style={{ padding: 10 }}>{clicked}</td><td style={{ padding: 10 }}>{rate(clicked, sent)}</td>
             <td style={{ padding: 10 }}>{reported}</td><td style={{ padding: 10 }}>{rate(reported, sent)}</td>
           </tr>;
@@ -146,8 +158,9 @@ export default async function CampaignResultsPage() {
 
     <section style={{ marginTop: 28, padding: 16, border: "1px solid #ddd", borderRadius: 10 }}>
       <h3 style={{ marginTop: 0 }}>How to interpret these signals</h3>
-      <p>A click is a learning opportunity, not a verdict about an employee. Use aggregate patterns to improve training, clarify reporting routes and strengthen processes. Small audiences can produce volatile percentages; review the counts alongside the rates.</p>
-      <p style={{ color: "#666", fontSize: 13, marginBottom: 0 }}>A reported count appears only when a future reporting workflow records a `reported` event. The current learner tracking endpoint records click events only.</p>
+      <p>Open counts are approximate: image blocking, mail privacy proxies and security scanners can suppress or trigger tracking pixels. Do not treat an open as proof that a person read a message.</p>
+      <p>A click is a learning opportunity, not a verdict about an employee. The self-report count records an optional response on the teachable-moment page after a simulation link is clicked; it is not a real mailbox report and does not notify IT. Use aggregate patterns to improve training and clarify the organisation's normal reporting route.</p>
+      <p style={{ color: "#666", fontSize: 13, marginBottom: 0 }}>Small audiences can produce volatile percentages. Review counts alongside rates, and use the results for coaching rather than punitive decisions.</p>
     </section>
   </main>;
 }
