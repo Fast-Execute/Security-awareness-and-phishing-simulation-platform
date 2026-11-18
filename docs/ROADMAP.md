@@ -14,7 +14,7 @@
 ## Phase 2: Campaigns
 - [x] Campaign launch, scheduling, sending queue and tracking in SQL (`launch_campaign`, `claim_recipients`, `record_event`, `campaign_stats`)
 - [x] Campaign builder UI
-- [ ] `send-campaign` edge function (idempotent, rate limited): written, untested (no Deno here); email adapter not yet checked against the provider's docs
+- [ ] `send-campaign` edge function: hardened with compare-and-set campaign claims, bounded batches, pacing, Resend idempotency keys, tenant/domain/AUP gates and credential-form rejection; still requires Deno/provider integration tests and deployment
 - [ ] `track` edge function and teachable-moment page: written, untested; open pixel and report button still to do
 - [x] Organisation-scoped campaign results dashboard (aggregate metrics; per-campaign rows)
 
