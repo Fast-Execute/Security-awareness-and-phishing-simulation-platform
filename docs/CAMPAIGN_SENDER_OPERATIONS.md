@@ -48,6 +48,10 @@ The endpoint does not store IP addresses or request bodies. It stores only the e
 - A provider-accepted message is recorded as `sent`, not `delivered`. A future verified provider webhook should record actual delivery events.
 - Permanent provider 4xx errors mark a recipient failed; transient network errors, rate limits and provider 5xx responses remain pending for a later run.
 
+## Automated unit tests
+
+Run the repository's Node-based unit suite with `npm test`. It covers CSV parsing, safe template rendering, tracking-token validation, allowed event/method combinations, bounded user-agent handling, and tracking markup helpers. GitHub Actions runs this suite on pushes and pull requests. This suite does not replace Deno Edge Function type-checking or a staging integration test against Supabase and Resend.
+
 ## Pre-production checklist
 
 1. Run the Node unit tests and add a Deno Edge Function type-check/integration test in a non-production Supabase project.
