@@ -1,0 +1,12 @@
+project_id = "security-awareness-platform"
+
+# Called server-side by the app with the anon key, and the token itself is the credential.
+[functions.track]
+verify_jwt = false
+
+# Does its own authorisation (admin JWT or service key), so the gateway check is switched off.
+[functions.send-campaign]
+verify_jwt = false
+
+[functions.verify-domain]
+verify_jwt = true

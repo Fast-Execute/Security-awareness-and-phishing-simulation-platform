@@ -11,17 +11,17 @@ one (or report it) get short, targeted **awareness training** straight away.
 ## Project progress
 
 <!-- progress:start -->
-**Overall: 20%** (4/20 tasks)
+**Overall: 24%** (5/21 tasks)
 
 ```
-[████░░░░░░░░░░░░░░░░] 20%
+[█████░░░░░░░░░░░░░░░] 24%
 ```
 
 | Stage | Progress | Status |
 |-------|----------|--------|
 | Phase 0: Foundation | `████████████████████` 100% (2/2) | ✅ Complete |
 | **▶ Phase 1: Admin MVP** | `████████░░░░░░░░░░░░` 40% (2/5) | 🚧 **In progress (current stage)** |
-| Phase 2: Campaigns | `░░░░░░░░░░░░░░░░░░░░` 0% (0/4) | ⏳ Not started |
+| Phase 2: Campaigns | `████░░░░░░░░░░░░░░░░` 20% (1/5) | 🚧 Partial |
 | Phase 3: Training | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |
 | Phase 4: Insights | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |
 | Phase 5: Integrations | `░░░░░░░░░░░░░░░░░░░░` 0% (0/3) | ⏳ Not started |
@@ -70,7 +70,7 @@ cp .env.example .env.local
 ## Tests
 
 ```bash
-npm test          # CSV parser (Node 22.18+, no extra packages)
+npm test          # CSV parser and email renderer (Node 22.18+, no extra packages)
 npm run test:db   # SQL guards + RLS against a throwaway local Postgres (needs PostgreSQL server binaries)
 ```
 

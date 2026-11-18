@@ -12,9 +12,10 @@
 - [x] Template library (5 to 8 generic scenarios)
 
 ## Phase 2: Campaigns
-- [ ] Campaign builder and scheduler
-- [ ] `send-campaign` edge function (idempotent, rate limited)
-- [ ] `track` edge function (open, click, report) and teachable-moment page
+- [x] Campaign launch, scheduling, sending queue and tracking in SQL (`launch_campaign`, `claim_recipients`, `record_event`, `campaign_stats`)
+- [ ] Campaign builder UI
+- [ ] `send-campaign` edge function (idempotent, rate limited): written, untested (no Deno here); email adapter not yet checked against the provider's docs
+- [ ] `track` edge function and teachable-moment page: written, untested; open pixel and report button still to do
 - [ ] Per-campaign results view
 
 ## Phase 3: Training
