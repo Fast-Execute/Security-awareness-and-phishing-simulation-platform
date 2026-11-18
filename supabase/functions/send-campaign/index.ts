@@ -1,102 +1,98 @@
-// Edge Function: send-campaign
-// POST { "campaign_id": "<uuid>" }
-// Callers: an org owner/admin (user JWT) or an internal scheduler holding the service-role key.
-// Claims recipients in small batches, sends, and records the outcome. Safe to call repeatedly:
-// claims use leases, and a recipient is only ever marked sent once.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-import { createClient } from "npm:@supabase/supabase-js@2";
-import { sendEmail } from "../_shared/email.ts";
-import {
-  buildFrom, firstName, htmlToText, renderTemplate, safeEqual, trackingUrl,
-} from "../_shared/render.ts";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const CRON_SECRET = Deno.env.get("CAMPAIGN_CRON_SECRET")!;
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+const FROM_EMAIL = Deno.env.get("SIMULATION_FROM_EMAIL")!;
+const MAX_PER_RUN = Number(Deno.env.get("CAMPAIGN_MAX_PER_RUN") || "20");
+const db = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const BATCH = 25;
-const TIME_BUDGET_MS = 45_000;
-const PAUSE_MS = 250; // simple rate limit: about 4 emails per second
+function firstName(fullName: string | null) { return fullName?.trim().split(/\s+/)[0] || "there"; }
+function escapeHtml(value: string) { return value.replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]!)); }
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function sendEmail(to: string, subject: string, html: string) {
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject, html })
+  });
+  if (!response.ok) throw new Error(`provider returned ${response.status}`);
+}
 
-Deno.serve(async (req) => {
-  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+Deno.serve(async req => {
+  if (req.method !== "POST") return new Response("POST required", { status: 405 });
+  if (!CRON_SECRET || req.headers.get("x-campaign-secret") !== CRON_SECRET) return new Response("unauthorized", { status: 401 });
+  if (!RESEND_API_KEY || !FROM_EMAIL) return new Response("sending provider is not configured", { status: 503 });
 
-  const url = Deno.env.get("SUPABASE_URL")!;
-  const anon = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const emailKey = Deno.env.get("EMAIL_PROVIDER_API_KEY");
-  const appBase = Deno.env.get("APP_BASE_URL");
-  if (!emailKey || !appBase) return json({ error: "server is not configured for sending" }, 500);
+  const fromDomain = FROM_EMAIL.split("@")[1]?.toLowerCase();
+  if (!fromDomain) return new Response("invalid simulation sender", { status: 500 });
 
-  const body = await req.json().catch(() => null);
-  const campaignId = body?.campaign_id;
-  if (typeof campaignId !== "string" || !UUID_RE.test(campaignId)) {
-    return json({ error: "campaign_id must be a uuid" }, 400);
-  }
+  const { data: campaigns, error } = await db.from("campaigns")
+    .select("id,org_id,name,template_id,domain_id,group_id,status,scheduled_at")
+    .eq("status", "scheduled").lte("scheduled_at", new Date().toISOString())
+    .order("scheduled_at").limit(10);
+  if (error) return new Response(error.message, { status: 500 });
 
-  const admin = createClient(url, serviceKey);
+  const results: Record<string, unknown>[] = [];
 
-  // Authorise: internal scheduler (service key) or an admin of the campaign's organisation.
-  const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!safeEqual(bearer, serviceKey)) {
-    const userClient = createClient(url, anon, {
-      global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
-    });
-    const { data: u } = await userClient.auth.getUser();
-    if (!u?.user) return json({ error: "unauthorized" }, 401);
-    const { data: camp } = await userClient.from("campaigns").select("org_id").eq("id", campaignId).maybeSingle();
-    if (!camp) return json({ error: "campaign not found" }, 404);
-    const { data: ok } = await userClient.rpc("is_org_member", { p_org: camp.org_id, p_roles: ["owner", "admin"] });
-    if (!ok) return json({ error: "forbidden" }, 403);
-  }
+  for (const campaign of campaigns || []) {
+    const [{ data: org }, { data: domain }, { data: template }, { data: group }] = await Promise.all([
+      db.from("organizations").select("aup_accepted_at").eq("id", campaign.org_id).maybeSingle(),
+      db.from("domains").select("domain,verified_at").eq("id", campaign.domain_id).eq("org_id", campaign.org_id).maybeSingle(),
+      db.from("templates").select("name,subject,body_html").eq("id", campaign.template_id)
+        .or(`org_id.is.null,org_id.eq.${campaign.org_id}`).maybeSingle(),
+      db.from("groups").select("id").eq("id", campaign.group_id).eq("org_id", campaign.org_id).maybeSingle()
+    ]);
 
-  const started = Date.now();
-  let sent = 0, failed = 0, deferred = 0;
+    if (!org?.aup_accepted_at || !domain?.verified_at || domain.domain !== fromDomain || !template || !group) {
+      results.push({ campaign_id: campaign.id, status: "blocked", reason: "safety gate failed" });
+      continue;
+    }
 
-  while (Date.now() - started < TIME_BUDGET_MS) {
-    const { data: batch, error } = await admin.rpc("claim_recipients", { p_campaign: campaignId, p_limit: BATCH });
-    if (error) return json({ error: "could not claim recipients" }, 500);
-    if (!batch || batch.length === 0) break;
+    const { error: lockError } = await db.from("campaigns").update({ status: "sending" })
+      .eq("id", campaign.id).eq("status", "scheduled");
+    if (lockError) { results.push({ campaign_id: campaign.id, status: "error", reason: lockError.message }); continue; }
 
-    for (const r of batch) {
+    const { data: members, error: memberError } = await db.from("group_targets")
+      .select("target_id,targets(id,email,full_name)").eq("group_id", campaign.group_id).limit(MAX_PER_RUN);
+    if (memberError) { results.push({ campaign_id: campaign.id, status: "error", reason: memberError.message }); continue; }
+
+    let sent = 0, failed = 0;
+    for (const member of members || []) {
+      const target = (member as any).targets;
+      if (!target?.email) continue;
+
+      const { data: existing } = await db.from("campaign_recipients")
+        .select("id,status,tracking_token").eq("campaign_id", campaign.id).eq("target_id", target.id).maybeSingle();
+      if (existing?.status === "sent") continue;
+
+      const { data: recipient, error: recipientError } = await db.from("campaign_recipients")
+        .upsert({ campaign_id: campaign.id, org_id: campaign.org_id, target_id: target.id },
+          { onConflict: "campaign_id,target_id" }).select("id,tracking_token").single();
+      if (recipientError || !recipient) { failed++; continue; }
+
+      const trackingUrl = `${SUPABASE_URL}/functions/v1/track?t=${encodeURIComponent(recipient.tracking_token)}`;
+      const html = template.body_html
+        .replaceAll("{{first_name}}", escapeHtml(firstName(target.full_name)))
+        .replaceAll("{{tracking_url}}", trackingUrl);
+
       try {
-        const vars = { first_name: firstName(r.full_name), tracking_url: trackingUrl(appBase, r.tracking_token) };
-        const html = renderTemplate(r.body_html, vars, "html");
-        const result = await sendEmail(emailKey, {
-          from: buildFrom(r.sender_name, r.sender_local, r.domain),
-          to: r.email,
-          subject: renderTemplate(r.subject, vars, "text"),
-          html,
-          text: htmlToText(html),
-          // Lets the organisation's security team allow-list or identify simulation mail.
-          headers: { "X-Phishing-Simulation": campaignId },
-          idempotencyKey: r.recipient_id,
-        });
-        if (result.ok) {
-          await admin.rpc("mark_recipient_sent", { p_recipient: r.recipient_id });
-          sent++;
-        } else if (result.transient) {
-          deferred++; // stays claimed; the lease expires and a later run retries it
-        } else {
-          await admin.rpc("mark_recipient_failed", { p_recipient: r.recipient_id, p_reason: result.reason });
-          failed++;
-        }
-      } catch (e) {
-        // A bad template or address is permanent for this recipient; do not retry forever.
-        await admin.rpc("mark_recipient_failed", { p_recipient: r.recipient_id, p_reason: (e as Error).message });
+        await sendEmail(target.email, template.subject.replaceAll("{{first_name}}", firstName(target.full_name)), html);
+        await db.from("campaign_recipients").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", recipient.id);
+        await db.from("campaign_events").insert({ recipient_id: recipient.id, org_id: campaign.org_id, type: "delivered" });
+        sent++;
+      } catch {
+        await db.from("campaign_recipients").update({ status: "failed" }).eq("id", recipient.id);
         failed++;
       }
-      await sleep(PAUSE_MS);
     }
+
+    const { count: pending } = await db.from("campaign_recipients")
+      .select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).eq("status", "pending");
+    await db.from("campaigns").update({ status: pending ? "scheduled" : "completed" }).eq("id", campaign.id);
+    results.push({ campaign_id: campaign.id, status: "processed", sent, failed, pending: pending || 0 });
   }
 
-  const { count: remaining } = await admin
-    .from("campaign_recipients")
-    .select("id", { count: "exact", head: true })
-    .eq("campaign_id", campaignId)
-    .eq("status", "pending");
-  const { data: c } = await admin.from("campaigns").select("status").eq("id", campaignId).maybeSingle();
-
-  return json({ sent, failed, deferred, remaining: remaining ?? 0, status: c?.status ?? null });
+  return Response.json({ processed: results.length, results });
 });
