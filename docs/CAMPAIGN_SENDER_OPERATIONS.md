@@ -41,6 +41,7 @@ The endpoint does not store IP addresses or request bodies. It stores only the e
 ## Safety and retry behaviour
 
 - Campaigns are claimed with a conditional `scheduled → sending` update so concurrent invocations cannot both own the same campaign.
+- Audience membership, target rows and existing recipient rows are fetched in pages of 500 (below the PostgREST maximum page size), so large groups are not silently truncated at the default response limit.
 - Recipients are processed in bounded batches, and each send is paced.
 - Resend receives a stable idempotency key based on the campaign-recipient row. Resend documents a 24-hour idempotency window; keep retries within that window where possible.
 - Only the supported `first_name` and `tracking_url` placeholders are accepted.
