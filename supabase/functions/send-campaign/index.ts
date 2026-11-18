@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { firstName, isSafeSimulationTemplate, renderTemplate } from "../_shared/render.ts";
 import { trackingPixelHtml } from "../_shared/tracking.ts";
+import { fetchAllPages } from "../_shared/pagination.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -109,25 +110,34 @@ Deno.serve(async req => {
     let remaining = 0;
 
     try {
-      const { data: groupLinks, error: linksError } = await db.from("group_targets")
-        .select("target_id").eq("group_id", campaign.group_id);
-      if (linksError) throw new Error("unable to load group membership");
+      const groupLinks = await fetchAllPages(async (from, to) => {
+        const { data, error } = await db.from("group_targets")
+          .select("target_id").eq("group_id", campaign.group_id).range(from, to);
+        return { data, error };
+      });
 
-      const targetIds = [...new Set((groupLinks ?? []).map(row => row.target_id))];
+      const targetIds = [...new Set(groupLinks.map(row => row.target_id))];
       if (targetIds.length === 0) {
         await db.from("campaigns").update({ status: "completed" }).eq("id", campaign.id).eq("status", "sending");
         results.push({ campaign_id: campaign.id, status: "completed", sent: 0, failed: 0, note: "empty audience" });
         continue;
       }
 
-      const [{ data: targetRows, error: targetsError }, { data: recipientRows, error: recipientsError }] = await Promise.all([
-        db.from("targets").select("id,org_id,email,full_name").eq("org_id", campaign.org_id).in("id", targetIds),
-        db.from("campaign_recipients").select("id,target_id,status,tracking_token").eq("campaign_id", campaign.id),
+      const [targetRows, recipientRows] = await Promise.all([
+        fetchAllPages(async (from, to) => {
+          const { data, error } = await db.from("targets").select("id,org_id,email,full_name")
+            .eq("org_id", campaign.org_id).in("id", targetIds).range(from, to);
+          return { data, error };
+        }),
+        fetchAllPages(async (from, to) => {
+          const { data, error } = await db.from("campaign_recipients")
+            .select("id,target_id,status,tracking_token").eq("campaign_id", campaign.id).range(from, to);
+          return { data, error };
+        }),
       ]);
-      if (targetsError || recipientsError) throw new Error("unable to load campaign recipients");
 
-      const targetById = new Map((targetRows ?? []).map(row => [row.id, row as Target]));
-      const recipientByTarget = new Map((recipientRows ?? []).map(row => [row.target_id, row as Recipient]));
+      const targetById = new Map(targetRows.map(row => [row.id, row as Target]));
+      const recipientByTarget = new Map(recipientRows.map(row => [row.target_id, row as Recipient]));
       const eligible = targetIds
         .map(id => targetById.get(id))
         .filter((target): target is Target => Boolean(target && target.org_id === campaign.org_id &&
@@ -192,7 +202,7 @@ Deno.serve(async req => {
       if (countError) throw new Error("unable to determine remaining work");
       remaining = unfinished ?? 0;
 
-      const processedTargetIds = new Set((recipientRows ?? []).map(row => row.target_id));
+      const processedTargetIds = new Set(recipientRows.map(row => row.target_id));
       const unrepresented = targetIds.filter(id => targetById.has(id) && !processedTargetIds.has(id));
       remaining += unrepresented.length;
 
